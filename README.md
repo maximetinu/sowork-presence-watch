@@ -36,6 +36,16 @@ official SoWork product.
 - A SoWork API key. In SoWork, open the office you want to watch and go to
   Settings → SoWork API → API keys. A key belongs to one office.
 
+## Platforms
+
+- **macOS**: everything works. The default alert is a desktop notification.
+- **Linux**: everything works, but the default alert is only a terminal bell.
+  For a desktop notification, set a custom alert such as
+  `notify-send "$SOWORK_PRESENCE_WATCH_MESSAGE"` (see
+  [Custom alerts](#custom-alerts)).
+- **Windows**: not tested. Custom alerts run in `sh -c`, so they need WSL or
+  Git Bash.
+
 ## Install
 
 ```sh
@@ -138,6 +148,9 @@ names with quotes are safe. Quote the variables in your command.
 ```sh
 # Speak the change (macOS)
 sowork-presence-watch --alert-command 'say "$SOWORK_PRESENCE_WATCH_MESSAGE"'
+
+# Desktop notification (Linux)
+sowork-presence-watch --alert-command 'notify-send "SoWork" "$SOWORK_PRESENCE_WATCH_MESSAGE"'
 
 # Only when someone becomes available
 sowork-presence-watch --alert-command '[ "$SOWORK_PRESENCE_WATCH_TO" = available ] && say "$SOWORK_PRESENCE_WATCH_NAME is back"'
