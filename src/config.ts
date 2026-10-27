@@ -25,8 +25,8 @@ export type ConfigResult =
 export const HELP = `Usage: sowork-presence-watch [options]
 
 Watch your SoWork office from the terminal. Mark teammates with an alert,
-and get notified when their presence changes. Alerts last while the
-process runs.
+and get notified when their presence changes. Alerts and the alert command
+are saved for the next start, but alerts only fire while the tool runs.
 
 Options:
   --api-key <key>          SoWork API key (default: $SOWORK_API_KEY, then the
@@ -39,8 +39,9 @@ Options:
                            $SOWORK_PRESENCE_WATCH_ALERT_COMMAND, then the one
                            saved with the \`a\` key, then a desktop notification
                            on macOS or a terminal bell)
-  --watch <name-or-id>     Start with an alert on this teammate. Repeat for
-                           more. Matches a user id or part of a name.
+  --watch <name-or-id>     Turn on an alert for this teammate (saved, like the
+                           space key). Repeat for more. Matches a user id or
+                           part of a name.
   -h, --help               Show this help
   -v, --version            Show the version
 
@@ -56,6 +57,8 @@ Example:
 
 export interface SavedToolConfig {
   alertCommand?: string;
+  /** User ids with an alert on (🔔). */
+  watched?: string[];
 }
 
 /**
@@ -74,7 +77,16 @@ export function toolConfigPath(env: NodeJS.ProcessEnv): string {
 export function readToolConfig(env: NodeJS.ProcessEnv): SavedToolConfig {
   const parsed = readJsonObject(toolConfigPath(env));
   const alertCommand: unknown = parsed === undefined ? undefined : Reflect.get(parsed, 'alertCommand');
-  return { alertCommand: typeof alertCommand === 'string' ? alertCommand : undefined };
+  const watched: unknown = parsed === undefined ? undefined : Reflect.get(parsed, 'watched');
+  return {
+    alertCommand: typeof alertCommand === 'string' ? alertCommand : undefined,
+    watched: Array.isArray(watched) ? watched.filter((id): id is string => typeof id === 'string') : undefined,
+  };
+}
+
+/** Changes some settings and keeps the rest. Returns an error message on failure, else undefined. */
+export function updateToolConfig(env: NodeJS.ProcessEnv, patch: SavedToolConfig): string | undefined {
+  return writeToolConfig(env, { ...readToolConfig(env), ...patch });
 }
 
 /** Saves the settings file. Resolves with an error message on failure, else undefined. */

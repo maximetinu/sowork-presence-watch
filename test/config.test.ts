@@ -9,6 +9,7 @@ import {
   resolveConfig,
   soworkCliConfigPath,
   toolConfigPath,
+  updateToolConfig,
   writeToolConfig,
 } from '../src/config.ts';
 
@@ -81,10 +82,19 @@ test('the alert command comes from the flag, then the env var, then the saved se
 
 test('the saved alert command round-trips through the settings file, and saving none clears it', () => {
   const env = { SOWORK_PRESENCE_WATCH_CONFIG_DIR: mkdtempSync(path.join(tmpdir(), 'spw-')) };
-  assert.deepEqual(readToolConfig(env), { alertCommand: undefined });
+  assert.deepEqual(readToolConfig(env), { alertCommand: undefined, watched: undefined });
   assert.equal(writeToolConfig(env, { alertCommand: 'monica "$SOWORK_PRESENCE_WATCH_MESSAGE"' }), undefined);
   assert.equal(toolConfigPath(env), path.join(env.SOWORK_PRESENCE_WATCH_CONFIG_DIR, 'config.json'));
-  assert.deepEqual(readToolConfig(env), { alertCommand: 'monica "$SOWORK_PRESENCE_WATCH_MESSAGE"' });
+  assert.equal(readToolConfig(env).alertCommand, 'monica "$SOWORK_PRESENCE_WATCH_MESSAGE"');
   assert.equal(writeToolConfig(env, { alertCommand: undefined }), undefined);
-  assert.deepEqual(readToolConfig(env), { alertCommand: undefined });
+  assert.equal(readToolConfig(env).alertCommand, undefined);
+});
+
+test('updateToolConfig changes one setting and keeps the other', () => {
+  const env = { SOWORK_PRESENCE_WATCH_CONFIG_DIR: mkdtempSync(path.join(tmpdir(), 'spw-')) };
+  assert.equal(updateToolConfig(env, { alertCommand: 'say hi' }), undefined);
+  assert.equal(updateToolConfig(env, { watched: ['u1', 'u2'] }), undefined);
+  assert.deepEqual(readToolConfig(env), { alertCommand: 'say hi', watched: ['u1', 'u2'] });
+  assert.equal(updateToolConfig(env, { watched: [] }), undefined);
+  assert.deepEqual(readToolConfig(env), { alertCommand: 'say hi', watched: [] });
 });

@@ -18,6 +18,11 @@ export interface AppOptions {
   alertCommandSource: Config['alertCommandSource'];
   /** Saves the alert command (undefined = the default alert). Returns an error message on failure. */
   saveAlertCommand: (command: string | undefined) => string | undefined;
+  /** User ids with an alert on from the last run. */
+  savedWatched: string[];
+  /** Saves the user ids with an alert on. Returns an error message on failure. */
+  saveWatched: (ids: string[]) => string | undefined;
+  /** --watch values, resolved to teammates after the first check. */
   watch: string[];
 }
 
@@ -54,6 +59,7 @@ export class App {
   private alertCommandSource: Config['alertCommandSource'];
   /** The alert command being typed, while the editor is open. */
   private draft: string | undefined;
+  private restoredLogged = false;
 
   constructor(options: AppOptions) {
     this.options = options;
@@ -61,6 +67,9 @@ export class App {
     this.alertCommandSource = options.alertCommandSource;
     this.intervalSeconds = options.intervalSeconds;
     this.pendingWatch = [...options.watch];
+    for (const id of options.savedWatched) {
+      this.watched.add(id);
+    }
   }
 
   start(): void {
@@ -128,6 +137,14 @@ export class App {
   }
 
   private applyPendingWatch(): void {
+    if (!this.restoredLogged) {
+      this.restoredLogged = true;
+      const restored = this.members.filter((m) => this.watched.has(m.id)).map((m) => m.name);
+      if (restored.length > 0) {
+        this.addLog(`Saved alerts on for ${restored.join(', ')}`);
+      }
+    }
+    const before = this.watched.size;
     for (const query of this.pendingWatch) {
       const matches = matchMembers(this.members, query);
       if (matches.length === 0) {
@@ -139,6 +156,16 @@ export class App {
       }
     }
     this.pendingWatch = [];
+    if (this.watched.size !== before) {
+      this.saveWatched();
+    }
+  }
+
+  private saveWatched(): void {
+    const failure = this.options.saveWatched([...this.watched]);
+    if (failure !== undefined) {
+      this.addLog(red(`Could not save the alerts: ${failure}`));
+    }
   }
 
   private onKey(key: Key | undefined): void {
@@ -254,6 +281,7 @@ export class App {
       this.watched.add(member.id);
       this.addLog(`Alert on for ${member.name} (${member.availability})`);
     }
+    this.saveWatched();
   }
 
   private changeInterval(deltaSeconds: number): void {
@@ -279,7 +307,7 @@ export class App {
       ? 'checking…'
       : `next check in ${Math.max(0, Math.ceil((this.nextCheckAt - Date.now()) / 1000))}s`;
     const last = this.lastCheckAt === undefined ? 'never' : timeOf(this.lastCheckAt);
-    const watchedCount = this.watched.size;
+    const watchedCount = this.members.filter((m) => this.watched.has(m.id)).length;
     const header = [
       `${bold('SoWork office')}  ${dim(`every ${this.intervalSeconds}s · ${status} · last ${last}`)}`,
       dim(

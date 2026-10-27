@@ -18,8 +18,9 @@ SoWork office  every 30s · next check in 12s · last 14:33:49
 ```
 
 Mark a teammate with an alert (🔔). When their availability changes — for
-example from `away` to `available` — you get a notification. Alerts live only
-while the process runs: quit, and nothing keeps running in the background.
+example from `away` to `available` — you get a notification. Your alerts and
+your alert command are saved for the next start, but alerts only fire while
+the tool runs: quit, and nothing keeps running in the background.
 
 This is an independent tool built on the public `sowork` SDK. It is not an
 official SoWork product.
@@ -59,26 +60,32 @@ sowork-presence-watch --interval 60        # check every 60 seconds
 ```
 
 `--watch` takes a user id or part of a name, and you can repeat it. A name
-part that matches several teammates puts an alert on each of them.
+part that matches several teammates puts an alert on each of them. Like the
+`space` key, it saves the alert for the next start.
 
 | Key | Action |
 | --- | --- |
 | `↑` `↓` or `k` `j` | Select a teammate |
-| `space` or `enter` | Turn the alert on or off for the selected teammate |
+| `space` or `enter` | Turn the alert on or off for the selected teammate (saved) |
 | `t` | Test the alert: run it once with a made-up change of the selected teammate |
 | `a` | Edit the alert command. It is saved and used on the next start |
 | `+` `-` | Change the check interval by 10 seconds (10 s minimum) |
 | `r` | Check now |
 | `q` or `Ctrl+C` | Quit |
 
+## Saved settings
+
+The tool saves the teammates with an alert (by user id) and the alert command in
+`~/.config/sowork-presence-watch/config.json`, or under
+`$SOWORK_PRESENCE_WATCH_CONFIG_DIR` / `$XDG_CONFIG_HOME` when set. Delete the
+file to start clean.
+
 ## Custom alerts
 
 By default an alert is a desktop notification on macOS, and a terminal bell on
 other systems. To run your own command instead, press `a` in the tool, type the
-command and press `enter`. Press `t` to try it. The command is saved in
-`~/.config/sowork-presence-watch/config.json` (or under
-`$SOWORK_PRESENCE_WATCH_CONFIG_DIR` / `$XDG_CONFIG_HOME`). Save it empty to go
-back to the default alert.
+command and press `enter`. Press `t` to try it. The command is saved (see
+above). Save it empty to go back to the default alert.
 
 You can also pass `--alert-command` or set `SOWORK_PRESENCE_WATCH_ALERT_COMMAND`.
 These win over the saved command for that run.
