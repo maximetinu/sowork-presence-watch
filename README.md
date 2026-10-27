@@ -1,4 +1,4 @@
-# presence-watch
+# sowork-presence-watch
 
 Watch your [SoWork](https://www.sowork.com/) office from the terminal, and get
 an alert when a teammate's presence changes.
@@ -32,10 +32,10 @@ official SoWork product.
 ## Install
 
 ```sh
-git clone https://github.com/maximetinu/presence-watch.git
-cd presence-watch
+git clone https://github.com/maximetinu/sowork-presence-watch.git
+cd sowork-presence-watch
 npm install
-npm link        # puts `presence-watch` on your PATH
+npm link        # puts `sowork-presence-watch` on your PATH
 ```
 
 ## Authenticate
@@ -53,9 +53,9 @@ The tool looks for an API key in this order:
 ## Use
 
 ```sh
-presence-watch                      # open the office view
-presence-watch --watch Alex         # start with an alert on Alex
-presence-watch --interval 60        # check every 60 seconds
+sowork-presence-watch                      # open the office view
+sowork-presence-watch --watch Alex         # start with an alert on Alex
+sowork-presence-watch --interval 60        # check every 60 seconds
 ```
 
 `--watch` takes a user id or part of a name, and you can repeat it. A name
@@ -73,26 +73,26 @@ part that matches several teammates puts an alert on each of them.
 
 By default an alert is a desktop notification on macOS, and a terminal bell on
 other systems. To run your own command instead, pass `--alert-command` or set
-`PRESENCE_WATCH_ALERT_COMMAND`. The command runs in `sh -c` and gets these
+`SOWORK_PRESENCE_WATCH_ALERT_COMMAND`. The command runs in `sh -c` and gets these
 environment variables:
 
 | Variable | Example |
 | --- | --- |
-| `PRESENCE_WATCH_USER_ID` | `u1a2b3c4d5e6f7g8h9i0` |
-| `PRESENCE_WATCH_NAME` | `Alex` |
-| `PRESENCE_WATCH_FROM` | `away` |
-| `PRESENCE_WATCH_TO` | `available` |
-| `PRESENCE_WATCH_MESSAGE` | `Alex is now available (was away)` |
+| `SOWORK_PRESENCE_WATCH_USER_ID` | `u1a2b3c4d5e6f7g8h9i0` |
+| `SOWORK_PRESENCE_WATCH_NAME` | `Alex` |
+| `SOWORK_PRESENCE_WATCH_FROM` | `away` |
+| `SOWORK_PRESENCE_WATCH_TO` | `available` |
+| `SOWORK_PRESENCE_WATCH_MESSAGE` | `Alex is now available (was away)` |
 
 The values are passed as variables, never pasted into the command text, so
 names with quotes are safe. Quote the variables in your command.
 
 ```sh
 # Speak the change (macOS)
-presence-watch --alert-command 'say "$PRESENCE_WATCH_MESSAGE"'
+sowork-presence-watch --alert-command 'say "$SOWORK_PRESENCE_WATCH_MESSAGE"'
 
 # Only when someone becomes available
-presence-watch --alert-command '[ "$PRESENCE_WATCH_TO" = available ] && say "$PRESENCE_WATCH_NAME is back"'
+sowork-presence-watch --alert-command '[ "$SOWORK_PRESENCE_WATCH_TO" = available ] && say "$SOWORK_PRESENCE_WATCH_NAME is back"'
 ```
 
 ## How it works

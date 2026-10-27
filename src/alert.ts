@@ -13,11 +13,11 @@ export function runAlert(change: PresenceChange, alertCommand: string | undefine
   const message = changeMessage(change);
   if (alertCommand !== undefined) {
     return run('sh', ['-c', alertCommand], {
-      PRESENCE_WATCH_USER_ID: change.member.id,
-      PRESENCE_WATCH_NAME: change.member.name,
-      PRESENCE_WATCH_FROM: change.from,
-      PRESENCE_WATCH_TO: change.to,
-      PRESENCE_WATCH_MESSAGE: message,
+      SOWORK_PRESENCE_WATCH_USER_ID: change.member.id,
+      SOWORK_PRESENCE_WATCH_NAME: change.member.name,
+      SOWORK_PRESENCE_WATCH_FROM: change.from,
+      SOWORK_PRESENCE_WATCH_TO: change.to,
+      SOWORK_PRESENCE_WATCH_MESSAGE: message,
     });
   }
   if (process.platform === 'darwin') {

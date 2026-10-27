@@ -1,12 +1,12 @@
 {
-  "name": "presence-watch",
+  "name": "sowork-presence-watch",
   "version": "0.1.0",
   "description": "Watch your SoWork office from the terminal and get an alert when a teammate's presence changes.",
   "license": "MIT",
   "author": "Metinu",
   "type": "module",
   "bin": {
-    "presence-watch": "dist/cli.js"
+    "sowork-presence-watch": "dist/cli.js"
   },
   "files": [
     "dist"

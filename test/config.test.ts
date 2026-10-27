@@ -32,7 +32,7 @@ test('interval defaults, reads the env var, and rejects values under the minimum
   const byDefault = resolveConfig([], { SOWORK_API_KEY: 'k' }, noSaved);
   assert.equal(byDefault.kind === 'config' && byDefault.config.intervalSeconds, DEFAULT_INTERVAL_SECONDS);
 
-  const fromEnv = resolveConfig([], { SOWORK_API_KEY: 'k', PRESENCE_WATCH_INTERVAL: '45' }, noSaved);
+  const fromEnv = resolveConfig([], { SOWORK_API_KEY: 'k', SOWORK_PRESENCE_WATCH_INTERVAL: '45' }, noSaved);
   assert.equal(fromEnv.kind === 'config' && fromEnv.config.intervalSeconds, 45);
 
   assert.equal(resolveConfig(['--interval', '5'], { SOWORK_API_KEY: 'k' }, noSaved).kind, 'error');
@@ -42,7 +42,7 @@ test('interval defaults, reads the env var, and rejects values under the minimum
 test('--watch repeats and --alert-command falls back to the env var', () => {
   const result = resolveConfig(
     ['--watch', 'Alex', '--watch', 'Bea'],
-    { SOWORK_API_KEY: 'k', PRESENCE_WATCH_ALERT_COMMAND: 'say hi' },
+    { SOWORK_API_KEY: 'k', SOWORK_PRESENCE_WATCH_ALERT_COMMAND: 'say hi' },
     noSaved,
   );
   assert.deepEqual(result.kind === 'config' && result.config.watch, ['Alex', 'Bea']);

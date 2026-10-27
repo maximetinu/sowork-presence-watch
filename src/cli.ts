@@ -27,14 +27,14 @@ async function main(): Promise<void> {
       process.stdout.write(`${version()}\n`);
       return;
     case 'error':
-      process.stderr.write(`presence-watch: ${result.message}\n`);
+      process.stderr.write(`sowork-presence-watch: ${result.message}\n`);
       process.exitCode = 2;
       return;
   }
   const { config } = result;
 
   if (!process.stdin.isTTY || !process.stdout.isTTY) {
-    process.stderr.write('presence-watch: needs an interactive terminal.\n');
+    process.stderr.write('sowork-presence-watch: needs an interactive terminal.\n');
     process.exitCode = 2;
     return;
   }
@@ -45,7 +45,7 @@ async function main(): Promise<void> {
   try {
     selfId = (await client.me.getMe()).data.id;
   } catch (err) {
-    process.stderr.write(`presence-watch: could not connect to SoWork: ${describeError(err)}\n`);
+    process.stderr.write(`sowork-presence-watch: could not connect to SoWork: ${describeError(err)}\n`);
     process.exitCode = 1;
     return;
   }

@@ -20,7 +20,7 @@ export type ConfigResult =
   | { kind: 'version' }
   | { kind: 'error'; message: string };
 
-export const HELP = `Usage: presence-watch [options]
+export const HELP = `Usage: sowork-presence-watch [options]
 
 Watch your SoWork office from the terminal. Mark teammates with an alert,
 and get notified when their presence changes. Alerts last while the
@@ -32,9 +32,9 @@ Options:
   --base-url <url>         API base URL (default: $SOWORK_BASE_URL, then the
                            saved CLI config, then production)
   --interval <seconds>     Seconds between checks, ${MIN_INTERVAL_SECONDS} or more
-                           (default: $PRESENCE_WATCH_INTERVAL, then ${DEFAULT_INTERVAL_SECONDS})
+                           (default: $SOWORK_PRESENCE_WATCH_INTERVAL, then ${DEFAULT_INTERVAL_SECONDS})
   --alert-command <cmd>    Shell command to run on each alert (default:
-                           $PRESENCE_WATCH_ALERT_COMMAND, then a desktop
+                           $SOWORK_PRESENCE_WATCH_ALERT_COMMAND, then a desktop
                            notification on macOS or a terminal bell)
   --watch <name-or-id>     Start with an alert on this teammate. Repeat for
                            more. Matches a user id or part of a name.
@@ -42,12 +42,13 @@ Options:
   -v, --version            Show the version
 
 The alert command gets these environment variables:
-  PRESENCE_WATCH_USER_ID, PRESENCE_WATCH_NAME, PRESENCE_WATCH_FROM,
-  PRESENCE_WATCH_TO, PRESENCE_WATCH_MESSAGE
+  SOWORK_PRESENCE_WATCH_USER_ID, SOWORK_PRESENCE_WATCH_NAME,
+  SOWORK_PRESENCE_WATCH_FROM, SOWORK_PRESENCE_WATCH_TO,
+  SOWORK_PRESENCE_WATCH_MESSAGE
 
 Example:
-  presence-watch --watch Alex \\
-    --alert-command 'say "$PRESENCE_WATCH_NAME is now $PRESENCE_WATCH_TO"'
+  sowork-presence-watch --watch Alex \\
+    --alert-command 'say "$SOWORK_PRESENCE_WATCH_NAME is now $SOWORK_PRESENCE_WATCH_TO"'
 `;
 
 export interface SavedCliConfig {
@@ -137,7 +138,7 @@ export function resolveConfig(
     };
   }
 
-  const rawInterval = nonEmpty(values.interval) ?? nonEmpty(env.PRESENCE_WATCH_INTERVAL);
+  const rawInterval = nonEmpty(values.interval) ?? nonEmpty(env.SOWORK_PRESENCE_WATCH_INTERVAL);
   const intervalSeconds = rawInterval === undefined ? DEFAULT_INTERVAL_SECONDS : Number(rawInterval);
   if (!Number.isInteger(intervalSeconds) || intervalSeconds < MIN_INTERVAL_SECONDS) {
     return {
@@ -152,7 +153,7 @@ export function resolveConfig(
       apiKey,
       baseUrl: nonEmpty(values['base-url']) ?? nonEmpty(env.SOWORK_BASE_URL) ?? nonEmpty(saved.baseUrl),
       intervalSeconds,
-      alertCommand: nonEmpty(values['alert-command']) ?? nonEmpty(env.PRESENCE_WATCH_ALERT_COMMAND),
+      alertCommand: nonEmpty(values['alert-command']) ?? nonEmpty(env.SOWORK_PRESENCE_WATCH_ALERT_COMMAND),
       watch: values.watch ?? [],
     },
   };
