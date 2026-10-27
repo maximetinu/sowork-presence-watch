@@ -50,7 +50,7 @@ the tool, it shows your profiles:
   client-x             Sam · 0 alerts
   + New profile
 
-↑↓ select · enter open · n new profile · d delete · q quit
+↑↓ select · enter open · n new profile · r rename · d delete · q quit
 ```
 
 Pick one with `enter`, or create one: type a name, then paste the API key. The

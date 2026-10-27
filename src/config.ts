@@ -93,6 +93,19 @@ export function profileNameProblem(name: string, config: SavedToolConfig): strin
   return undefined;
 }
 
+/** Moves a profile to a new name. The last profile opened follows it. */
+export function renameProfile(config: SavedToolConfig, from: string, to: string): void {
+  const profile = config.profiles[from];
+  if (profile === undefined) {
+    return;
+  }
+  delete config.profiles[from];
+  config.profiles[to] = profile;
+  if (config.lastProfile === from) {
+    config.lastProfile = to;
+  }
+}
+
 /**
  * This tool's own settings file: $SOWORK_PRESENCE_WATCH_CONFIG_DIR, then
  * $XDG_CONFIG_HOME/sowork-presence-watch, then ~/.config/sowork-presence-watch.

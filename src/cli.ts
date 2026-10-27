@@ -5,6 +5,7 @@ import {
   HELP,
   readSoworkCliConfig,
   readToolConfig,
+  renameProfile,
   resolveConfig,
   updateToolConfig,
   type Config,
@@ -95,6 +96,7 @@ async function pickSession(config: Config, notice: string | undefined): Promise<
           saved.lastProfile = undefined;
         }
       }),
+    renameProfile: (from, to) => updateToolConfig(env, (saved) => renameProfile(saved, from, to)),
     checkKey: (apiKey) => userNameOf(config, apiKey),
     soworkLoginKey: readSoworkCliConfig(env).apiKey,
     newProfileName:

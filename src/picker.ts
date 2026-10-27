@@ -20,6 +20,7 @@ export interface PickerOptions {
   /** Saves a new or changed profile and makes it the last one opened. Returns an error message on failure. */
   saveProfile: (name: string, profile: Profile) => string | undefined;
   deleteProfile: (name: string) => string | undefined;
+  renameProfile: (from: string, to: string) => string | undefined;
   /** Checks a key against the API and returns its user's name. Throws when the key does not work. */
   checkKey: (apiKey: string) => Promise<string>;
   /** The key saved by `sowork login`, offered when creating a profile. */
@@ -32,7 +33,7 @@ export interface PickerOptions {
 
 export type PickResult = { kind: 'profile'; name: string; profile: Profile } | { kind: 'quit' };
 
-type Mode = 'list' | 'name' | 'key' | 'checking' | 'confirm-delete';
+type Mode = 'list' | 'name' | 'key' | 'checking' | 'confirm-delete' | 'rename';
 
 const NEW_PROFILE = '+ New profile';
 
@@ -101,6 +102,9 @@ export class ProfilePicker {
       case 'confirm-delete':
         this.onConfirmDeleteKey(key);
         break;
+      case 'rename':
+        this.onRenameKey(text, key);
+        break;
       case 'checking':
         return;
     }
@@ -143,6 +147,15 @@ export class ProfilePicker {
           this.message = undefined;
         }
         break;
+      case 'r': {
+        const name = names[this.selected];
+        if (name !== undefined) {
+          this.mode = 'rename';
+          this.input = name;
+          this.message = undefined;
+        }
+        break;
+      }
       case 'q':
         this.done({ kind: 'quit' });
         break;
@@ -230,6 +243,31 @@ export class ProfilePicker {
     this.mode = 'list';
   }
 
+  private onRenameKey(text: string | undefined, key: Key | undefined): void {
+    const from = this.names()[this.selected];
+    const edit = editLine(this.input, text, key);
+    if (edit.kind === 'edit') {
+      this.input = edit.value;
+      return;
+    }
+    const to = edit.kind === 'submit' ? edit.value.trim() : from;
+    if (from === undefined || to === undefined || to === from) {
+      this.mode = 'list';
+      this.message = undefined;
+      return;
+    }
+    const problem = profileNameProblem(to, this.config);
+    if (problem !== undefined) {
+      this.message = red(problem);
+      return;
+    }
+    const failure = this.options.renameProfile(from, to);
+    this.config = this.options.readConfig();
+    this.selected = Math.max(0, this.names().indexOf(failure === undefined ? to : from));
+    this.message = failure === undefined ? `Renamed profile ${from} to ${to}.` : red(`Could not rename: ${failure}`);
+    this.mode = 'list';
+  }
+
   private render(): void {
     if (this.finish === undefined) {
       return;
@@ -254,8 +292,15 @@ export class ProfilePicker {
       lines.push(
         this.mode === 'confirm-delete'
           ? bold(`Delete profile ${names[this.selected] ?? ''} and its saved key? y yes · any other key no`)
-          : dim('↑↓ select · enter open · n new profile · d delete · q quit'),
+          : dim('↑↓ select · enter open · n new profile · r rename · d delete · q quit'),
       );
+    } else if (this.mode === 'rename') {
+      lines.push(bold(`Rename profile ${this.names()[this.selected] ?? ''}`), '');
+      lines.push(`Name: ${tail(this.input, columns - 10)}${inverse(' ')}`, '');
+      if (this.message !== undefined) {
+        lines.push(this.message, '');
+      }
+      lines.push(dim('enter save · esc cancel · ctrl+u clear · ctrl+c quit'));
     } else if (this.mode === 'name') {
       lines.push(bold('New profile'), 'A profile holds one SoWork API key, so one office, and its alerts.', '');
       lines.push(`Name: ${tail(this.input, columns - 10)}${inverse(' ')}`, '');

@@ -7,6 +7,7 @@ import {
   DEFAULT_INTERVAL_SECONDS,
   profileNameProblem,
   readToolConfig,
+  renameProfile,
   resolveConfig,
   soworkCliConfigPath,
   toolConfigPath,
@@ -128,4 +129,13 @@ test('profileNameProblem rejects bad and taken names', () => {
   assert.match(profileNameProblem('has space', config) ?? '', /letters/);
   assert.match(profileNameProblem('__proto__', config) ?? '', /letters/);
   assert.match(profileNameProblem('', config) ?? '', /letters/);
+});
+
+test('renameProfile moves the profile and the last profile opened', () => {
+  const work = { apiKey: 'k', userName: 'Alex', watched: ['u1'] };
+  const config = { alertCommand: undefined, lastProfile: 'work', profiles: { work } };
+  renameProfile(config, 'work', 'office');
+  assert.deepEqual(config, { alertCommand: undefined, lastProfile: 'office', profiles: { office: work } });
+  renameProfile(config, 'missing', 'other');
+  assert.deepEqual(Object.keys(config.profiles), ['office']);
 });
