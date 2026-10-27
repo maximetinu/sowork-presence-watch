@@ -39,7 +39,8 @@ official SoWork product.
 ## Platforms
 
 - **macOS**: everything works. The default alert is a desktop notification.
-- **Linux**: everything works, but the default alert is only a terminal bell.
+- **Linux**: not tested yet, but no part of the tool is macOS only. The default
+  alert is only a terminal bell.
   For a desktop notification, set a custom alert such as
   `notify-send "$SOWORK_PRESENCE_WATCH_MESSAGE"` (see
   [Custom alerts](#custom-alerts)).
