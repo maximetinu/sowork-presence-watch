@@ -7,7 +7,10 @@ export const DEFAULT_INTERVAL_SECONDS = 30;
 export const MIN_INTERVAL_SECONDS = 10;
 
 export interface Config {
-  apiKey: string;
+  /** A key from --api-key or $SOWORK_API_KEY. Without one, the tool uses a saved profile. */
+  apiKey: { key: string; source: 'flag' | 'env' } | undefined;
+  /** --profile: open this profile and skip the profile picker. */
+  profile: string | undefined;
   baseUrl: string | undefined;
   intervalSeconds: number;
   alertCommand: string | undefined;
@@ -28,9 +31,16 @@ Watch your SoWork office from the terminal. Mark teammates with an alert,
 and get notified when their presence changes. Alerts and the alert command
 are saved for the next start, but alerts only fire while the tool runs.
 
+Each profile holds one SoWork API key (one office) and its alerts. At start
+you pick a profile or create one. An API key belongs to one office: create it
+in SoWork, in Settings → SoWork API → API keys.
+
 Options:
-  --api-key <key>          SoWork API key (default: $SOWORK_API_KEY, then the
-                           key saved by \`sowork login\`)
+  --profile <name>         Open this profile and skip the picker. With
+                           --api-key, create the profile or replace its key.
+  --api-key <key>          Use this key (default: $SOWORK_API_KEY). Without
+                           --profile, the run uses no profile and saves no
+                           alerts.
   --base-url <url>         API base URL (default: $SOWORK_BASE_URL, then the
                            saved CLI config, then production)
   --interval <seconds>     Seconds between checks, ${MIN_INTERVAL_SECONDS} or more
@@ -55,10 +65,32 @@ Example:
     --alert-command 'say "$SOWORK_PRESENCE_WATCH_NAME is now $SOWORK_PRESENCE_WATCH_TO"'
 `;
 
-export interface SavedToolConfig {
-  alertCommand?: string;
+export interface Profile {
+  apiKey: string;
+  /** The key's user name when the profile was created, to tell profiles apart. */
+  userName: string | undefined;
   /** User ids with an alert on (🔔). */
-  watched?: string[];
+  watched: string[];
+}
+
+export interface SavedToolConfig {
+  alertCommand: string | undefined;
+  /** The profile opened last, selected first in the picker. */
+  lastProfile: string | undefined;
+  profiles: Record<string, Profile>;
+}
+
+const PROFILE_NAME = /^[A-Za-z0-9][A-Za-z0-9._-]{0,31}$/;
+
+/** Returns why a new profile name is not valid, or undefined when it is. */
+export function profileNameProblem(name: string, config: SavedToolConfig): string | undefined {
+  if (!PROFILE_NAME.test(name)) {
+    return 'Use 1-32 letters, digits, dots, dashes or underscores, starting with a letter or digit.';
+  }
+  if (Object.hasOwn(config.profiles, name)) {
+    return `A profile named ${name} already exists.`;
+  }
+  return undefined;
 }
 
 /**
@@ -76,17 +108,53 @@ export function toolConfigPath(env: NodeJS.ProcessEnv): string {
 
 export function readToolConfig(env: NodeJS.ProcessEnv): SavedToolConfig {
   const parsed = readJsonObject(toolConfigPath(env));
-  const alertCommand: unknown = parsed === undefined ? undefined : Reflect.get(parsed, 'alertCommand');
-  const watched: unknown = parsed === undefined ? undefined : Reflect.get(parsed, 'watched');
+  const profiles: Record<string, Profile> = {};
+  const rawProfiles: unknown = parsed === undefined ? undefined : Reflect.get(parsed, 'profiles');
+  if (typeof rawProfiles === 'object' && rawProfiles !== null) {
+    for (const [name, raw] of Object.entries(rawProfiles)) {
+      const profile = parseProfile(raw);
+      if (PROFILE_NAME.test(name) && profile !== undefined) {
+        profiles[name] = profile;
+      }
+    }
+  }
   return {
-    alertCommand: typeof alertCommand === 'string' ? alertCommand : undefined,
-    watched: Array.isArray(watched) ? watched.filter((id): id is string => typeof id === 'string') : undefined,
+    alertCommand: stringField(parsed, 'alertCommand'),
+    lastProfile: stringField(parsed, 'lastProfile'),
+    profiles,
   };
 }
 
-/** Changes some settings and keeps the rest. Returns an error message on failure, else undefined. */
-export function updateToolConfig(env: NodeJS.ProcessEnv, patch: SavedToolConfig): string | undefined {
-  return writeToolConfig(env, { ...readToolConfig(env), ...patch });
+function parseProfile(raw: unknown): Profile | undefined {
+  if (typeof raw !== 'object' || raw === null) {
+    return undefined;
+  }
+  const apiKey = stringField(raw, 'apiKey');
+  if (apiKey === undefined) {
+    return undefined;
+  }
+  const watched: unknown = Reflect.get(raw, 'watched');
+  return {
+    apiKey,
+    userName: stringField(raw, 'userName'),
+    watched: Array.isArray(watched) ? watched.filter((id): id is string => typeof id === 'string') : [],
+  };
+}
+
+function stringField(value: object | undefined, field: string): string | undefined {
+  const raw: unknown = value === undefined ? undefined : Reflect.get(value, field);
+  return typeof raw === 'string' ? raw : undefined;
+}
+
+/**
+ * Reads the settings, applies a change and writes them back, so changes from
+ * another running copy of the tool are kept. Returns an error message on
+ * failure, else undefined.
+ */
+export function updateToolConfig(env: NodeJS.ProcessEnv, change: (config: SavedToolConfig) => void): string | undefined {
+  const config = readToolConfig(env);
+  change(config);
+  return writeToolConfig(env, config);
 }
 
 /** Saves the settings file. Resolves with an error message on failure, else undefined. */
@@ -138,13 +206,14 @@ export function resolveConfig(
   argv: string[],
   env: NodeJS.ProcessEnv,
   savedConfig: () => SavedCliConfig,
-  savedToolConfig: () => SavedToolConfig = () => ({}),
+  savedToolConfig: () => Pick<SavedToolConfig, 'alertCommand'> = () => ({ alertCommand: undefined }),
 ): ConfigResult {
   let values;
   try {
     ({ values } = parseArgs({
       args: argv,
       options: {
+        profile: { type: 'string' },
         'api-key': { type: 'string' },
         'base-url': { type: 'string' },
         interval: { type: 'string' },
@@ -168,14 +237,13 @@ export function resolveConfig(
   }
 
   const saved = savedConfig();
-  const apiKey = nonEmpty(values['api-key']) ?? nonEmpty(env.SOWORK_API_KEY) ?? nonEmpty(saved.apiKey);
-  if (apiKey === undefined) {
-    return {
-      kind: 'error',
-      message:
-        'No API key. Pass --api-key, set SOWORK_API_KEY, or run `sowork login`. ' +
-        'Create a key in SoWork settings.',
-    };
+  const flagKey = nonEmpty(values['api-key']);
+  const envKey = nonEmpty(env.SOWORK_API_KEY);
+  let apiKey: Config['apiKey'];
+  if (flagKey !== undefined) {
+    apiKey = { key: flagKey, source: 'flag' };
+  } else if (envKey !== undefined) {
+    apiKey = { key: envKey, source: 'env' };
   }
 
   const rawInterval = nonEmpty(values.interval) ?? nonEmpty(env.SOWORK_PRESENCE_WATCH_INTERVAL);
@@ -191,6 +259,7 @@ export function resolveConfig(
     kind: 'config',
     config: {
       apiKey,
+      profile: nonEmpty(values.profile),
       baseUrl: nonEmpty(values['base-url']) ?? nonEmpty(env.SOWORK_BASE_URL) ?? nonEmpty(saved.baseUrl),
       intervalSeconds,
       ...resolveAlertCommand(values['alert-command'], env, savedToolConfig),
@@ -202,7 +271,7 @@ export function resolveConfig(
 function resolveAlertCommand(
   flag: string | undefined,
   env: NodeJS.ProcessEnv,
-  savedToolConfig: () => SavedToolConfig,
+  savedToolConfig: () => Pick<SavedToolConfig, 'alertCommand'>,
 ): Pick<Config, 'alertCommand' | 'alertCommandSource'> {
   const fromFlag = nonEmpty(flag);
   if (fromFlag !== undefined) {

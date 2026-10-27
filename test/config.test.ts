@@ -1,41 +1,37 @@
 import assert from 'node:assert/strict';
-import { mkdtempSync } from 'node:fs';
+import { mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { test } from 'node:test';
 import {
   DEFAULT_INTERVAL_SECONDS,
+  profileNameProblem,
   readToolConfig,
   resolveConfig,
   soworkCliConfigPath,
   toolConfigPath,
   updateToolConfig,
-  writeToolConfig,
 } from '../src/config.ts';
 
 const noSaved = () => ({});
 
-test('the --api-key flag wins over the env var and the saved CLI key', () => {
-  const result = resolveConfig(['--api-key', 'flag'], { SOWORK_API_KEY: 'env' }, () => ({ apiKey: 'saved' }));
-  assert.equal(result.kind === 'config' && result.config.apiKey, 'flag');
+test('the --api-key flag wins over SOWORK_API_KEY, and the source is kept', () => {
+  const result = resolveConfig(['--api-key', 'flag'], { SOWORK_API_KEY: 'env' }, noSaved);
+  assert.deepEqual(result.kind === 'config' && result.config.apiKey, { key: 'flag', source: 'flag' });
+  const fromEnv = resolveConfig([], { SOWORK_API_KEY: 'env' }, noSaved);
+  assert.deepEqual(fromEnv.kind === 'config' && fromEnv.config.apiKey, { key: 'env', source: 'env' });
 });
 
-test('SOWORK_API_KEY wins over the saved CLI key', () => {
-  const result = resolveConfig([], { SOWORK_API_KEY: 'env' }, () => ({ apiKey: 'saved' }));
-  assert.equal(result.kind === 'config' && result.config.apiKey, 'env');
-});
-
-test('the saved CLI key and base URL are the fallback', () => {
-  const result = resolveConfig([], {}, () => ({ apiKey: 'saved', baseUrl: 'https://example.test' }));
+test('without a flag or env key there is no key: the profile picker runs instead', () => {
+  const result = resolveConfig([], {}, () => ({ apiKey: 'saved-by-sowork-login' }));
   assert.equal(result.kind, 'config');
-  assert.equal(result.kind === 'config' && result.config.apiKey, 'saved');
-  assert.equal(result.kind === 'config' && result.config.baseUrl, 'https://example.test');
+  assert.equal(result.kind === 'config' && result.config.apiKey, undefined);
 });
 
-test('no key anywhere is an error that says how to get one', () => {
-  const result = resolveConfig([], {}, noSaved);
-  assert.equal(result.kind, 'error');
-  assert.match(result.kind === 'error' ? result.message : '', /sowork login/);
+test('--profile is read, and the saved CLI base URL is the fallback', () => {
+  const result = resolveConfig(['--profile', 'work'], {}, () => ({ baseUrl: 'https://example.test' }));
+  assert.equal(result.kind === 'config' && result.config.profile, 'work');
+  assert.equal(result.kind === 'config' && result.config.baseUrl, 'https://example.test');
 });
 
 test('interval defaults, reads the env var, and rejects values under the minimum', () => {
@@ -80,21 +76,56 @@ test('the alert command comes from the flag, then the env var, then the saved se
   assert.deepEqual(none.kind === 'config' && [none.config.alertCommand, none.config.alertCommandSource], [undefined, 'default']);
 });
 
-test('the saved alert command round-trips through the settings file, and saving none clears it', () => {
-  const env = { SOWORK_PRESENCE_WATCH_CONFIG_DIR: mkdtempSync(path.join(tmpdir(), 'spw-')) };
-  assert.deepEqual(readToolConfig(env), { alertCommand: undefined, watched: undefined });
-  assert.equal(writeToolConfig(env, { alertCommand: 'monica "$SOWORK_PRESENCE_WATCH_MESSAGE"' }), undefined);
+const tempEnv = () => ({ SOWORK_PRESENCE_WATCH_CONFIG_DIR: mkdtempSync(path.join(tmpdir(), 'spw-')) });
+
+test('an empty settings file reads as no profiles', () => {
+  const env = tempEnv();
   assert.equal(toolConfigPath(env), path.join(env.SOWORK_PRESENCE_WATCH_CONFIG_DIR, 'config.json'));
-  assert.equal(readToolConfig(env).alertCommand, 'monica "$SOWORK_PRESENCE_WATCH_MESSAGE"');
-  assert.equal(writeToolConfig(env, { alertCommand: undefined }), undefined);
+  assert.deepEqual(readToolConfig(env), { alertCommand: undefined, lastProfile: undefined, profiles: {} });
+});
+
+test('profiles, the last profile and the alert command round-trip through the settings file', () => {
+  const env = tempEnv();
+  assert.equal(
+    updateToolConfig(env, (c) => {
+      c.profiles.work = { apiKey: 'sw_1', userName: 'Sam', watched: ['u1'] };
+      c.lastProfile = 'work';
+    }),
+    undefined,
+  );
+  assert.equal(
+    updateToolConfig(env, (c) => {
+      c.alertCommand = 'monica "$SOWORK_PRESENCE_WATCH_MESSAGE"';
+    }),
+    undefined,
+  );
+  assert.deepEqual(readToolConfig(env), {
+    alertCommand: 'monica "$SOWORK_PRESENCE_WATCH_MESSAGE"',
+    lastProfile: 'work',
+    profiles: { work: { apiKey: 'sw_1', userName: 'Sam', watched: ['u1'] } },
+  });
+  updateToolConfig(env, (c) => {
+    c.alertCommand = undefined;
+    delete c.profiles.work;
+  });
+  assert.deepEqual(readToolConfig(env).profiles, {});
   assert.equal(readToolConfig(env).alertCommand, undefined);
 });
 
-test('updateToolConfig changes one setting and keeps the other', () => {
-  const env = { SOWORK_PRESENCE_WATCH_CONFIG_DIR: mkdtempSync(path.join(tmpdir(), 'spw-')) };
-  assert.equal(updateToolConfig(env, { alertCommand: 'say hi' }), undefined);
-  assert.equal(updateToolConfig(env, { watched: ['u1', 'u2'] }), undefined);
-  assert.deepEqual(readToolConfig(env), { alertCommand: 'say hi', watched: ['u1', 'u2'] });
-  assert.equal(updateToolConfig(env, { watched: [] }), undefined);
-  assert.deepEqual(readToolConfig(env), { alertCommand: 'say hi', watched: [] });
+test('profiles without a key or with a bad name are dropped when read', () => {
+  const env = tempEnv();
+  writeFileSync(
+    toolConfigPath(env),
+    JSON.stringify({ profiles: { ok: { apiKey: 'k' }, nokey: { watched: [] }, 'bad name': { apiKey: 'k' } } }),
+  );
+  assert.deepEqual(readToolConfig(env).profiles, { ok: { apiKey: 'k', userName: undefined, watched: [] } });
+});
+
+test('profileNameProblem rejects bad and taken names', () => {
+  const config = { alertCommand: undefined, lastProfile: undefined, profiles: { work: { apiKey: 'k', userName: undefined, watched: [] } } };
+  assert.equal(profileNameProblem('client-x', config), undefined);
+  assert.match(profileNameProblem('work', config) ?? '', /already exists/);
+  assert.match(profileNameProblem('has space', config) ?? '', /letters/);
+  assert.match(profileNameProblem('__proto__', config) ?? '', /letters/);
+  assert.match(profileNameProblem('', config) ?? '', /letters/);
 });

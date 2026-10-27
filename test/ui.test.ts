@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { charWidth, describeError, fit } from '../src/tui.ts';
+import { charWidth, describeError, editLine, fit, maskSecret } from '../src/ui.ts';
 
 test('charWidth counts emoji as 2 columns and variation selectors as 0', () => {
   assert.equal(charWidth('a'), 1);
@@ -20,4 +20,17 @@ test('describeError explains a rejected key and rate limiting', () => {
   assert.match(describeError({ response: { status: 401 } }), /API key was rejected/);
   assert.match(describeError({ response: { status: 429 } }), /--interval/);
   assert.equal(describeError(new Error('boom')), 'boom');
+});
+
+test('maskSecret hides all but the last 4 characters of a long key', () => {
+  assert.equal(maskSecret('sw_abcdefgh1234'), '•••••••••••1234');
+  assert.equal(maskSecret('short'), '•••••');
+});
+
+test('editLine types, deletes, clears, submits and cancels', () => {
+  assert.deepEqual(editLine('ab', 'c', { name: 'c', sequence: 'c' }), { kind: 'edit', value: 'abc' });
+  assert.deepEqual(editLine('ab😎', undefined, { name: 'backspace' }), { kind: 'edit', value: 'ab' });
+  assert.deepEqual(editLine('abc', undefined, { name: 'u', ctrl: true }), { kind: 'edit', value: '' });
+  assert.deepEqual(editLine('abc', '\r', { name: 'return' }), { kind: 'submit', value: 'abc' });
+  assert.deepEqual(editLine('abc', undefined, { name: 'escape' }), { kind: 'cancel' });
 });

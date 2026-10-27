@@ -1,4 +1,3 @@
-import { emitKeypressEvents, type Key } from 'node:readline';
 import { runAlert } from './alert.ts';
 import { MIN_INTERVAL_SECONDS, type Config } from './config.ts';
 import {
@@ -9,8 +8,25 @@ import {
   type Availability,
   type Member,
 } from './presence.ts';
+import {
+  bold,
+  describeError,
+  dim,
+  editLine,
+  fit,
+  inverse,
+  isQuitKey,
+  paint,
+  red,
+  tail,
+  terminal,
+  timeOf,
+  type Key,
+} from './ui.ts';
 
 export interface AppOptions {
+  /** The open profile, or undefined for a run with a key from --api-key or $SOWORK_API_KEY. */
+  profileName: string | undefined;
   fetchMembers: () => Promise<Member[]>;
   selfId: string;
   intervalSeconds: number;
@@ -20,20 +36,16 @@ export interface AppOptions {
   saveAlertCommand: (command: string | undefined) => string | undefined;
   /** User ids with an alert on from the last run. */
   savedWatched: string[];
-  /** Saves the user ids with an alert on. Returns an error message on failure. */
-  saveWatched: (ids: string[]) => string | undefined;
+  /** Saves the user ids with an alert on. Returns an error message on failure. Undefined without a profile. */
+  saveWatched: ((ids: string[]) => string | undefined) | undefined;
   /** --watch values, resolved to teammates after the first check. */
   watch: string[];
 }
 
+export type OfficeExit = 'quit' | 'switch-profile';
+
 const LOG_LINES = 5;
 const NAME_WIDTH = 30;
-const useColor = process.env.NO_COLOR === undefined;
-const paint = (code: string) => (text: string) => (useColor ? `\x1b[${code}m${text}\x1b[0m` : text);
-const dim = paint('2');
-const bold = paint('1');
-const red = paint('31');
-const inverse = paint('7');
 
 const DOT: Record<Availability, string> = {
   available: paint('32')('●'),
@@ -42,7 +54,8 @@ const DOT: Record<Availability, string> = {
   offline: dim('○'),
 };
 
-export class App {
+/** The office view: the teammate list, alerts and the alert command editor. */
+export class OfficeView {
   private members: Member[] = [];
   private selectedId: string | undefined;
   private readonly watched = new Set<string>();
@@ -60,6 +73,8 @@ export class App {
   /** The alert command being typed, while the editor is open. */
   private draft: string | undefined;
   private restoredLogged = false;
+  private stopListening: (() => void) | undefined;
+  private finish: ((exit: OfficeExit) => void) | undefined;
 
   constructor(options: AppOptions) {
     this.options = options;
@@ -72,31 +87,27 @@ export class App {
     }
   }
 
-  start(): void {
-    const { stdin, stdout } = process;
-    stdout.write('\x1b[?1049h\x1b[?25l');
-    emitKeypressEvents(stdin);
-    stdin.setRawMode(true);
-    stdin.resume();
-    stdin.on('keypress', (text: string | undefined, key: Key | undefined) => {
-      if (this.draft === undefined) {
-        this.onKey(key);
-      } else {
-        this.onEditKey(text, key);
+  /** Shows the view until the user quits or asks to switch profile. */
+  run(): Promise<OfficeExit> {
+    return new Promise((resolve) => {
+      this.finish = resolve;
+      this.stopListening = terminal.listen(
+        (text, key) => (this.draft === undefined ? this.onKey(key) : this.onEditKey(text, key)),
+        () => this.render(),
+      );
+      this.ticker = setInterval(() => this.tick(), 1000);
+      if (this.options.saveWatched === undefined) {
+        this.addLog(dim('No profile: alerts are not saved. Press p to pick or create a profile.'));
       }
+      this.tick();
     });
-    stdout.on('resize', () => this.render());
-    process.on('SIGTERM', () => this.quit());
-    this.ticker = setInterval(() => this.tick(), 1000);
-    this.tick();
   }
 
-  quit(): void {
-    if (this.ticker !== undefined) {
-      clearInterval(this.ticker);
-    }
-    process.stdout.write('\x1b[?25h\x1b[?1049l');
-    process.exit(0);
+  private exit(exit: OfficeExit): void {
+    clearInterval(this.ticker);
+    this.stopListening?.();
+    this.finish?.(exit);
+    this.finish = undefined;
   }
 
   private tick(): void {
@@ -107,6 +118,9 @@ export class App {
   }
 
   private async check(): Promise<void> {
+    if (this.finish === undefined) {
+      return;
+    }
     this.checking = true;
     this.render();
     try {
@@ -162,7 +176,7 @@ export class App {
   }
 
   private saveWatched(): void {
-    const failure = this.options.saveWatched([...this.watched]);
+    const failure = this.options.saveWatched?.([...this.watched]);
     if (failure !== undefined) {
       this.addLog(red(`Could not save the alerts: ${failure}`));
     }
@@ -172,8 +186,12 @@ export class App {
     if (key === undefined) {
       return;
     }
-    if (key.name === 'q' || (key.ctrl === true && key.name === 'c')) {
-      this.quit();
+    if (key.name === 'q' || isQuitKey(key)) {
+      this.exit('quit');
+      return;
+    }
+    if (key.name === 'p') {
+      this.exit('switch-profile');
       return;
     }
     switch (key.name) {
@@ -211,22 +229,18 @@ export class App {
   }
 
   private onEditKey(text: string | undefined, key: Key | undefined): void {
-    const draft = this.draft ?? '';
-    if (key?.ctrl === true && key.name === 'c') {
-      this.quit();
+    if (isQuitKey(key)) {
+      this.exit('quit');
       return;
     }
-    if (key?.name === 'escape') {
+    const edit = editLine(this.draft ?? '', text, key);
+    if (edit.kind === 'edit') {
+      this.draft = edit.value;
+    } else {
       this.draft = undefined;
-    } else if (key?.name === 'return' || key?.name === 'enter') {
-      this.draft = undefined;
-      this.saveAlertCommand(draft.trim());
-    } else if (key?.name === 'backspace') {
-      this.draft = Array.from(draft).slice(0, -1).join('');
-    } else if (key?.ctrl === true && key.name === 'u') {
-      this.draft = '';
-    } else if (text !== undefined && key?.ctrl !== true && key?.meta !== true && !/[\x00-\x1f\x7f]/.test(text)) {
-      this.draft = draft + text;
+      if (edit.kind === 'submit') {
+        this.saveAlertCommand(edit.value.trim());
+      }
     }
     this.render();
   }
@@ -300,8 +314,11 @@ export class App {
   }
 
   private render(): void {
-    const rows = process.stdout.rows ?? 24;
-    const columns = process.stdout.columns ?? 80;
+    if (this.finish === undefined) {
+      return;
+    }
+    const rows = terminal.rows;
+    const columns = terminal.columns;
 
     const status = this.checking
       ? 'checking…'
@@ -309,7 +326,8 @@ export class App {
     const last = this.lastCheckAt === undefined ? 'never' : timeOf(this.lastCheckAt);
     const watchedCount = this.members.filter((m) => this.watched.has(m.id)).length;
     const header = [
-      `${bold('SoWork office')}  ${dim(`every ${this.intervalSeconds}s · ${status} · last ${last}`)}`,
+      `${bold('SoWork office')} ${this.options.profileName === undefined ? dim('(no profile)') : bold(this.options.profileName)}  ` +
+        dim(`every ${this.intervalSeconds}s · ${status} · last ${last}`),
       dim(
         `${this.members.length} teammates · ${watchedCount} ${watchedCount === 1 ? 'alert' : 'alerts'} on · ` +
           `alert: ${describeAlert(this.alertCommand)}${SOURCE_NOTE[this.alertCommandSource]}`,
@@ -321,7 +339,7 @@ export class App {
         ? [
             '',
             ...this.log,
-            dim('↑↓ select · space alert on/off · t test alert · a alert command · +/- interval · r check now · q quit'),
+            dim('↑↓ select · space alert on/off · t test alert · a alert command · +/- interval · r check now · p profiles · q quit'),
           ]
         : [
             '',
@@ -347,8 +365,7 @@ export class App {
       return member.id === this.selectedId ? inverse(line) : line;
     });
 
-    const lines = [...header, ...list, ...Array<string>(listHeight - list.length).fill(''), ...footer];
-    process.stdout.write(`\x1b[H\x1b[2J${lines.map((l) => clip(l, columns)).join('\n')}`);
+    terminal.draw([...header, ...list, ...Array<string>(listHeight - list.length).fill(''), ...footer]);
   }
 }
 
@@ -364,96 +381,4 @@ function describeAlert(command: string | undefined): string {
     return command;
   }
   return process.platform === 'darwin' ? 'desktop notification' : 'terminal bell';
-}
-
-function timeOf(date: Date): string {
-  return date.toTimeString().slice(0, 8);
-}
-
-/** Terminal columns of one code point: emoji take 2, joiners and variation selectors 0. */
-export function charWidth(char: string): number {
-  if (/[‍︀-️\p{Mn}]/u.test(char)) {
-    return 0;
-  }
-  return /\p{Extended_Pictographic}/u.test(char) && (char.codePointAt(0) ?? 0) > 0xff ? 2 : 1;
-}
-
-function textWidth(text: string): number {
-  let total = 0;
-  for (const char of text) {
-    total += charWidth(char);
-  }
-  return total;
-}
-
-/** Keeps the end of the text within the width, so the cursor stays visible while typing. */
-function tail(text: string, width: number): string {
-  if (textWidth(text) <= width) {
-    return text;
-  }
-  const chars = Array.from(text);
-  let out = '';
-  let used = 1;
-  for (let i = chars.length - 1; i >= 0; i -= 1) {
-    const char = chars[i] ?? '';
-    if (used + charWidth(char) > width) {
-      break;
-    }
-    out = char + out;
-    used += charWidth(char);
-  }
-  return `…${out}`;
-}
-
-/** Truncates or pads to a fixed number of terminal columns. */
-export function fit(text: string, width: number): string {
-  if (textWidth(text) <= width) {
-    return text + ' '.repeat(width - textWidth(text));
-  }
-  let out = '';
-  let used = 0;
-  for (const char of text) {
-    if (used + charWidth(char) > width - 1) {
-      break;
-    }
-    out += char;
-    used += charWidth(char);
-  }
-  return `${out}…${' '.repeat(width - 1 - used)}`;
-}
-
-/** Keeps a line from wrapping. ANSI codes do not count toward the width. */
-function clip(line: string, columns: number): string {
-  let visible = 0;
-  let out = '';
-  for (const part of line.split(/(\x1b\[[0-9;]*m)/)) {
-    if (part.startsWith('\x1b[')) {
-      out += part;
-      continue;
-    }
-    for (const char of part) {
-      if (visible + charWidth(char) > columns - 1) {
-        return `${out}\x1b[0m`;
-      }
-      out += char;
-      visible += charWidth(char);
-    }
-  }
-  return out;
-}
-
-export function describeError(err: unknown): string {
-  if (typeof err === 'object' && err !== null) {
-    const status: unknown = Reflect.get(Reflect.get(err, 'response') ?? {}, 'status');
-    if (status === 401) {
-      return 'the API key was rejected (401). Check the key.';
-    }
-    if (status === 429) {
-      return 'rate limited (429). Try a longer --interval.';
-    }
-    if (typeof status === 'number') {
-      return `HTTP ${status}`;
-    }
-  }
-  return err instanceof Error ? err.message : String(err);
 }

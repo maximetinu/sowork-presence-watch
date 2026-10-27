@@ -4,7 +4,7 @@ Watch your [SoWork](https://www.sowork.com/) office from the terminal, and get
 an alert when a teammate's presence changes.
 
 ```
-SoWork office  every 30s · next check in 12s · last 14:33:49
+SoWork office work  every 30s · next check in 12s · last 14:33:49
 22 teammates · 1 alert on · alert: desktop notification
 
 ●    Alice                          available
@@ -14,7 +14,7 @@ SoWork office  every 30s · next check in 12s · last 14:33:49
 ○    Dana                           offline
 
 14:33:49 Alert on for Alex (away)
-↑↓ select · space alert on/off · t test alert · a alert command · +/- interval · r check now · q quit
+↑↓ select · space alert on/off · t test alert · a alert command · +/- interval · r check now · p profiles · q quit
 ```
 
 Mark a teammate with an alert (🔔). When their availability changes — for
@@ -28,7 +28,8 @@ official SoWork product.
 ## Requirements
 
 - Node.js 22.18 or later
-- A SoWork API key. Create one in SoWork settings.
+- A SoWork API key. In SoWork, open the office you want to watch and go to
+  Settings → SoWork API → API keys. A key belongs to one office.
 
 ## Install
 
@@ -39,23 +40,40 @@ npm install
 npm link        # puts `sowork-presence-watch` on your PATH
 ```
 
-## Authenticate
+## Profiles
 
-The tool looks for an API key in this order:
+A profile is one API key, so one office, with its own alerts. When you start
+the tool, it shows your profiles:
 
-1. the `--api-key` flag
-2. the `SOWORK_API_KEY` environment variable
-3. the key that the `sowork` CLI saved with `sowork login`
-   (`~/.config/sowork/config.json`; it honors `SOWORK_CONFIG_DIR` and
-   `XDG_CONFIG_HOME`)
+```
+▸ work                 Sam · 2 alerts
+  client-x             Sam · 0 alerts
+  + New profile
 
-`--base-url` and `SOWORK_BASE_URL` select another API environment.
+↑↓ select · enter open · n new profile · d delete · q quit
+```
+
+Pick one with `enter`, or create one: type a name, then paste the API key. The
+tool checks the key before it saves the profile. If you used `sowork login`,
+leave the key empty to use that key. In the office view, `p` goes back to the
+profiles, so you can switch offices without quitting.
+
+Flags skip the picker:
+
+```sh
+sowork-presence-watch --profile work                  # open a saved profile
+sowork-presence-watch --profile work --api-key sw_…   # create it, or replace its key
+SOWORK_API_KEY=sw_… sowork-presence-watch             # one run without a profile (alerts not saved)
+```
+
+`--base-url` and `SOWORK_BASE_URL` (or `base-url` in the `sowork` CLI config)
+select another API environment for all profiles.
 
 ## Use
 
 ```sh
-sowork-presence-watch                      # open the office view
-sowork-presence-watch --watch Alex         # start with an alert on Alex
+sowork-presence-watch                      # pick a profile, then open the office view
+sowork-presence-watch --watch Alex         # also turn on an alert for Alex
 sowork-presence-watch --interval 60        # check every 60 seconds
 ```
 
@@ -71,14 +89,19 @@ part that matches several teammates puts an alert on each of them. Like the
 | `a` | Edit the alert command. It is saved and used on the next start |
 | `+` `-` | Change the check interval by 10 seconds (10 s minimum) |
 | `r` | Check now |
+| `p` | Back to the profiles |
 | `q` or `Ctrl+C` | Quit |
 
 ## Saved settings
 
-The tool saves the teammates with an alert (by user id) and the alert command in
-`~/.config/sowork-presence-watch/config.json`, or under
-`$SOWORK_PRESENCE_WATCH_CONFIG_DIR` / `$XDG_CONFIG_HOME` when set. Delete the
-file to start clean.
+The tool saves its settings in `~/.config/sowork-presence-watch/config.json`,
+or under `$SOWORK_PRESENCE_WATCH_CONFIG_DIR` / `$XDG_CONFIG_HOME` when set:
+each profile's API key and its teammates with an alert (by user id), the last
+profile opened, and the alert command, which all profiles share.
+
+The file holds your API keys in plain text, readable only by your user
+(mode `0600`), like the `sowork` CLI's own config. Delete the file to start
+clean.
 
 ## Custom alerts
 
