@@ -4,16 +4,21 @@ Watch your [SoWork](https://www.sowork.com/) office from the terminal, and get
 an alert when a teammate's presence changes.
 
 ```
-SoWork office work  every 30s · next check in 12s · last 14:33:49
-22 teammates · 1 alert on · alert: desktop notification
+SoWork office my-profile  every 30s · next check in 25s · last 20:26:19
+9 teammates · 2 alerts on · alert: say "My custom alert: $SOWORK_PRESENCE_WATCH_MESSAGE"
 
-●    Alice                          available
+●    Jordan 🚀                      available
+●    Robin                          available
 ●    Sam                            available (you)
-●    Bob 😎                          busy
-◐ 🔔 Alex                           away
-○    Dana                           offline
+●    Priya                          busy       🎧 Focus time
+● 🔔 Taylor                         busy       In a meeting until 15:00
+◐ 🔔 Alex                           away       Lunch 🍜
+◐    Kai                            away
+○    Chris                          offline    On vacation 🌴
+○    Morgan                         offline
 
-14:33:49 Alert on for Alex (away)
+20:26:19 Saved alerts on for Alex
+20:26:22 Alert on for Taylor (busy)
 ↑↓ select · space alert on/off · t test alert · a alert command · +/- interval · r check now · p profiles · q quit
 ```
 
@@ -46,8 +51,12 @@ A profile is one API key, so one office, with its own alerts. When you start
 the tool, it shows your profiles:
 
 ```
-▸ work                 Sam · 2 alerts
-  client-x             Sam · 0 alerts
+sowork-presence-watch
+
+Choose a profile. Each profile is one SoWork API key, so one office, with its own alerts.
+
+  my-other-office      Sam · 0 alerts
+▸ my-profile           Sam · 2 alerts
   + New profile
 
 ↑↓ select · enter open · n new profile · r rename · d delete · q quit
@@ -61,8 +70,8 @@ profiles, so you can switch offices without quitting.
 Flags skip the picker:
 
 ```sh
-sowork-presence-watch --profile work                  # open a saved profile
-sowork-presence-watch --profile work --api-key sw_…   # create it, or replace its key
+sowork-presence-watch --profile my-profile                  # open a saved profile
+sowork-presence-watch --profile my-profile --api-key sw_…   # create it, or replace its key
 SOWORK_API_KEY=sw_… sowork-presence-watch             # one run without a profile (alerts not saved)
 ```
 
