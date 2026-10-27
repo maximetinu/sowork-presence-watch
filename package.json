@@ -1,0 +1,31 @@
+{
+  "name": "presence-watch",
+  "version": "0.1.0",
+  "description": "Watch your SoWork office from the terminal and get an alert when a teammate's presence changes.",
+  "license": "MIT",
+  "author": "Metinu",
+  "type": "module",
+  "bin": {
+    "presence-watch": "dist/cli.js"
+  },
+  "files": [
+    "dist"
+  ],
+  "engines": {
+    "node": ">=22.18"
+  },
+  "scripts": {
+    "start": "node src/cli.ts",
+    "build": "tsc -p tsconfig.build.json",
+    "typecheck": "tsc --noEmit",
+    "test": "node --test test/*.test.ts",
+    "prepare": "npm run build"
+  },
+  "dependencies": {
+    "sowork": "^0.10.0"
+  },
+  "devDependencies": {
+    "@types/node": "^24.19.2",
+    "typescript": "^5.9.3"
+  }
+}
