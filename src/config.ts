@@ -1,4 +1,4 @@
-import { readFileSync } from 'node:fs';
+import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import path from 'node:path';
 import { parseArgs } from 'node:util';
@@ -11,6 +11,8 @@ export interface Config {
   baseUrl: string | undefined;
   intervalSeconds: number;
   alertCommand: string | undefined;
+  /** Where the alert command came from; a flag or env var wins over the saved one. */
+  alertCommandSource: 'flag' | 'env' | 'saved' | 'default';
   watch: string[];
 }
 
@@ -34,8 +36,9 @@ Options:
   --interval <seconds>     Seconds between checks, ${MIN_INTERVAL_SECONDS} or more
                            (default: $SOWORK_PRESENCE_WATCH_INTERVAL, then ${DEFAULT_INTERVAL_SECONDS})
   --alert-command <cmd>    Shell command to run on each alert (default:
-                           $SOWORK_PRESENCE_WATCH_ALERT_COMMAND, then a desktop
-                           notification on macOS or a terminal bell)
+                           $SOWORK_PRESENCE_WATCH_ALERT_COMMAND, then the one
+                           saved with the \`a\` key, then a desktop notification
+                           on macOS or a terminal bell)
   --watch <name-or-id>     Start with an alert on this teammate. Repeat for
                            more. Matches a user id or part of a name.
   -h, --help               Show this help
@@ -50,6 +53,41 @@ Example:
   sowork-presence-watch --watch Alex \\
     --alert-command 'say "$SOWORK_PRESENCE_WATCH_NAME is now $SOWORK_PRESENCE_WATCH_TO"'
 `;
+
+export interface SavedToolConfig {
+  alertCommand?: string;
+}
+
+/**
+ * This tool's own settings file: $SOWORK_PRESENCE_WATCH_CONFIG_DIR, then
+ * $XDG_CONFIG_HOME/sowork-presence-watch, then ~/.config/sowork-presence-watch.
+ */
+export function toolConfigPath(env: NodeJS.ProcessEnv): string {
+  const override = nonEmpty(env.SOWORK_PRESENCE_WATCH_CONFIG_DIR);
+  if (override !== undefined) {
+    return path.join(override, 'config.json');
+  }
+  const base = nonEmpty(env.XDG_CONFIG_HOME) ?? path.join(homedir(), '.config');
+  return path.join(base, 'sowork-presence-watch', 'config.json');
+}
+
+export function readToolConfig(env: NodeJS.ProcessEnv): SavedToolConfig {
+  const parsed = readJsonObject(toolConfigPath(env));
+  const alertCommand: unknown = parsed === undefined ? undefined : Reflect.get(parsed, 'alertCommand');
+  return { alertCommand: typeof alertCommand === 'string' ? alertCommand : undefined };
+}
+
+/** Saves the settings file. Resolves with an error message on failure, else undefined. */
+export function writeToolConfig(env: NodeJS.ProcessEnv, config: SavedToolConfig): string | undefined {
+  const file = toolConfigPath(env);
+  try {
+    mkdirSync(path.dirname(file), { recursive: true });
+    writeFileSync(file, `${JSON.stringify(config, null, 2)}\n`, { mode: 0o600 });
+    return undefined;
+  } catch (err) {
+    return err instanceof Error ? err.message : String(err);
+  }
+}
 
 export interface SavedCliConfig {
   apiKey?: string;
@@ -72,19 +110,8 @@ export function soworkCliConfigPath(env: NodeJS.ProcessEnv): string {
 
 /** Reads the sowork CLI config. A missing or unreadable file means no saved config. */
 export function readSoworkCliConfig(env: NodeJS.ProcessEnv): SavedCliConfig {
-  let raw: string;
-  try {
-    raw = readFileSync(soworkCliConfigPath(env), 'utf8');
-  } catch {
-    return {};
-  }
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(raw);
-  } catch {
-    return {};
-  }
-  if (typeof parsed !== 'object' || parsed === null) {
+  const parsed = readJsonObject(soworkCliConfigPath(env));
+  if (parsed === undefined) {
     return {};
   }
   const apiKey: unknown = Reflect.get(parsed, 'apiKey');
@@ -99,6 +126,7 @@ export function resolveConfig(
   argv: string[],
   env: NodeJS.ProcessEnv,
   savedConfig: () => SavedCliConfig,
+  savedToolConfig: () => SavedToolConfig = () => ({}),
 ): ConfigResult {
   let values;
   try {
@@ -153,10 +181,40 @@ export function resolveConfig(
       apiKey,
       baseUrl: nonEmpty(values['base-url']) ?? nonEmpty(env.SOWORK_BASE_URL) ?? nonEmpty(saved.baseUrl),
       intervalSeconds,
-      alertCommand: nonEmpty(values['alert-command']) ?? nonEmpty(env.SOWORK_PRESENCE_WATCH_ALERT_COMMAND),
+      ...resolveAlertCommand(values['alert-command'], env, savedToolConfig),
       watch: values.watch ?? [],
     },
   };
+}
+
+function resolveAlertCommand(
+  flag: string | undefined,
+  env: NodeJS.ProcessEnv,
+  savedToolConfig: () => SavedToolConfig,
+): Pick<Config, 'alertCommand' | 'alertCommandSource'> {
+  const fromFlag = nonEmpty(flag);
+  if (fromFlag !== undefined) {
+    return { alertCommand: fromFlag, alertCommandSource: 'flag' };
+  }
+  const fromEnv = nonEmpty(env.SOWORK_PRESENCE_WATCH_ALERT_COMMAND);
+  if (fromEnv !== undefined) {
+    return { alertCommand: fromEnv, alertCommandSource: 'env' };
+  }
+  const saved = nonEmpty(savedToolConfig().alertCommand);
+  if (saved !== undefined) {
+    return { alertCommand: saved, alertCommandSource: 'saved' };
+  }
+  return { alertCommand: undefined, alertCommandSource: 'default' };
+}
+
+/** A missing, unreadable or non-object JSON file reads as undefined. */
+function readJsonObject(file: string): object | undefined {
+  try {
+    const parsed: unknown = JSON.parse(readFileSync(file, 'utf8'));
+    return typeof parsed === 'object' && parsed !== null ? parsed : undefined;
+  } catch {
+    return undefined;
+  }
 }
 
 function nonEmpty(value: string | undefined): string | undefined {

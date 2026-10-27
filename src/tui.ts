@@ -1,6 +1,6 @@
 import { emitKeypressEvents, type Key } from 'node:readline';
 import { runAlert } from './alert.ts';
-import { MIN_INTERVAL_SECONDS } from './config.ts';
+import { MIN_INTERVAL_SECONDS, type Config } from './config.ts';
 import {
   changeMessage,
   matchMembers,
@@ -15,6 +15,9 @@ export interface AppOptions {
   selfId: string;
   intervalSeconds: number;
   alertCommand: string | undefined;
+  alertCommandSource: Config['alertCommandSource'];
+  /** Saves the alert command (undefined = the default alert). Returns an error message on failure. */
+  saveAlertCommand: (command: string | undefined) => string | undefined;
   watch: string[];
 }
 
@@ -47,9 +50,15 @@ export class App {
   private readonly log: string[] = [];
   private ticker: NodeJS.Timeout | undefined;
   private readonly options: AppOptions;
+  private alertCommand: string | undefined;
+  private alertCommandSource: Config['alertCommandSource'];
+  /** The alert command being typed, while the editor is open. */
+  private draft: string | undefined;
 
   constructor(options: AppOptions) {
     this.options = options;
+    this.alertCommand = options.alertCommand;
+    this.alertCommandSource = options.alertCommandSource;
     this.intervalSeconds = options.intervalSeconds;
     this.pendingWatch = [...options.watch];
   }
@@ -60,7 +69,13 @@ export class App {
     emitKeypressEvents(stdin);
     stdin.setRawMode(true);
     stdin.resume();
-    stdin.on('keypress', (_text: string | undefined, key: Key | undefined) => this.onKey(key));
+    stdin.on('keypress', (text: string | undefined, key: Key | undefined) => {
+      if (this.draft === undefined) {
+        this.onKey(key);
+      } else {
+        this.onEditKey(text, key);
+      }
+    });
     stdout.on('resize', () => this.render());
     process.on('SIGTERM', () => this.quit());
     this.ticker = setInterval(() => this.tick(), 1000);
@@ -97,7 +112,7 @@ export class App {
       }
       for (const change of changes) {
         this.addLog(changeMessage(change));
-        void runAlert(change, this.options.alertCommand).then((failure) => {
+        void runAlert(change, this.alertCommand).then((failure) => {
           if (failure !== undefined) {
             this.addLog(red(`Alert failed: ${failure}`));
           }
@@ -152,6 +167,12 @@ export class App {
           void this.check();
         }
         break;
+      case 'a':
+        this.draft = this.alertCommand ?? '';
+        break;
+      case 't':
+        this.testAlert();
+        break;
       default:
         if (key.sequence === '+' || key.sequence === '=') {
           this.changeInterval(10);
@@ -160,6 +181,58 @@ export class App {
         }
     }
     this.render();
+  }
+
+  private onEditKey(text: string | undefined, key: Key | undefined): void {
+    const draft = this.draft ?? '';
+    if (key?.ctrl === true && key.name === 'c') {
+      this.quit();
+      return;
+    }
+    if (key?.name === 'escape') {
+      this.draft = undefined;
+    } else if (key?.name === 'return' || key?.name === 'enter') {
+      this.draft = undefined;
+      this.saveAlertCommand(draft.trim());
+    } else if (key?.name === 'backspace') {
+      this.draft = Array.from(draft).slice(0, -1).join('');
+    } else if (key?.ctrl === true && key.name === 'u') {
+      this.draft = '';
+    } else if (text !== undefined && key?.ctrl !== true && key?.meta !== true && !/[\x00-\x1f\x7f]/.test(text)) {
+      this.draft = draft + text;
+    }
+    this.render();
+  }
+
+  private saveAlertCommand(command: string): void {
+    const value = command.length > 0 ? command : undefined;
+    const failure = this.options.saveAlertCommand(value);
+    if (failure !== undefined) {
+      this.addLog(red(`Could not save the alert command: ${failure}`));
+      return;
+    }
+    const overridden = this.alertCommandSource === 'flag' || this.alertCommandSource === 'env';
+    this.alertCommand = value;
+    this.alertCommandSource = value === undefined ? 'default' : 'saved';
+    this.addLog(`Saved alert: ${describeAlert(value)}. Press t to test it.`);
+    if (overridden) {
+      this.addLog(dim('Next start, --alert-command or SOWORK_PRESENCE_WATCH_ALERT_COMMAND still wins over the saved one.'));
+    }
+  }
+
+  /** Runs the alert once with a made-up change of the selected teammate. */
+  private testAlert(): void {
+    const member =
+      this.members.find((m) => m.id === this.selectedId) ?? this.members.find((m) => m.id === this.options.selfId);
+    if (member === undefined) {
+      return;
+    }
+    const to: Availability = member.availability === 'available' ? 'away' : 'available';
+    const change = { member, from: member.availability, to };
+    this.addLog(`Test alert: ${changeMessage(change)}`);
+    void runAlert(change, this.alertCommand).then((failure) => {
+      this.addLog(failure === undefined ? 'Test alert ran.' : red(`Test alert failed: ${failure}`));
+    });
   }
 
   private moveSelection(delta: number): void {
@@ -209,14 +282,27 @@ export class App {
     const watchedCount = this.watched.size;
     const header = [
       `${bold('SoWork office')}  ${dim(`every ${this.intervalSeconds}s · ${status} · last ${last}`)}`,
-      dim(`${this.members.length} teammates · ${watchedCount} ${watchedCount === 1 ? 'alert' : 'alerts'} on`),
+      dim(
+        `${this.members.length} teammates · ${watchedCount} ${watchedCount === 1 ? 'alert' : 'alerts'} on · ` +
+          `alert: ${describeAlert(this.alertCommand)}${SOURCE_NOTE[this.alertCommandSource]}`,
+      ),
       this.error === undefined ? '' : red(`Check failed: ${this.error}`),
     ];
-    const footer = [
-      '',
-      ...this.log,
-      dim('↑↓ select · space alert on/off · +/- interval · r check now · q quit'),
-    ];
+    const footer =
+      this.draft === undefined
+        ? [
+            '',
+            ...this.log,
+            dim('↑↓ select · space alert on/off · t test alert · a alert command · +/- interval · r check now · q quit'),
+          ]
+        : [
+            '',
+            ...this.log,
+            bold('Alert command') +
+              dim(' — runs in sh -c with $SOWORK_PRESENCE_WATCH_NAME, _FROM, _TO, _MESSAGE, _USER_ID'),
+            `> ${tail(this.draft, columns - 4)}${inverse(' ')}`,
+            dim('enter save · esc cancel · ctrl+u clear · save it empty for the default alert'),
+          ];
 
     const listHeight = Math.max(1, rows - header.length - footer.length);
     const selectedIndex = Math.max(0, this.members.findIndex((m) => m.id === this.selectedId));
@@ -238,6 +324,20 @@ export class App {
   }
 }
 
+const SOURCE_NOTE: Record<Config['alertCommandSource'], string> = {
+  flag: ' (from --alert-command)',
+  env: ' (from SOWORK_PRESENCE_WATCH_ALERT_COMMAND)',
+  saved: '',
+  default: '',
+};
+
+function describeAlert(command: string | undefined): string {
+  if (command !== undefined) {
+    return command;
+  }
+  return process.platform === 'darwin' ? 'desktop notification' : 'terminal bell';
+}
+
 function timeOf(date: Date): string {
   return date.toTimeString().slice(0, 8);
 }
@@ -256,6 +356,25 @@ function textWidth(text: string): number {
     total += charWidth(char);
   }
   return total;
+}
+
+/** Keeps the end of the text within the width, so the cursor stays visible while typing. */
+function tail(text: string, width: number): string {
+  if (textWidth(text) <= width) {
+    return text;
+  }
+  const chars = Array.from(text);
+  let out = '';
+  let used = 1;
+  for (let i = chars.length - 1; i >= 0; i -= 1) {
+    const char = chars[i] ?? '';
+    if (used + charWidth(char) > width) {
+      break;
+    }
+    out = char + out;
+    used += charWidth(char);
+  }
+  return `…${out}`;
 }
 
 /** Truncates or pads to a fixed number of terminal columns. */

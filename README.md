@@ -5,7 +5,7 @@ an alert when a teammate's presence changes.
 
 ```
 SoWork office  every 30s · next check in 12s · last 14:33:49
-22 teammates · 1 alert on
+22 teammates · 1 alert on · alert: desktop notification
 
 ●    Alice                          available
 ●    Sam                            available (you)
@@ -14,7 +14,7 @@ SoWork office  every 30s · next check in 12s · last 14:33:49
 ○    Dana                           offline
 
 14:33:49 Alert on for Alex (away)
-↑↓ select · space alert on/off · +/- interval · r check now · q quit
+↑↓ select · space alert on/off · t test alert · a alert command · +/- interval · r check now · q quit
 ```
 
 Mark a teammate with an alert (🔔). When their availability changes — for
@@ -65,6 +65,8 @@ part that matches several teammates puts an alert on each of them.
 | --- | --- |
 | `↑` `↓` or `k` `j` | Select a teammate |
 | `space` or `enter` | Turn the alert on or off for the selected teammate |
+| `t` | Test the alert: run it once with a made-up change of the selected teammate |
+| `a` | Edit the alert command. It is saved and used on the next start |
 | `+` `-` | Change the check interval by 10 seconds (10 s minimum) |
 | `r` | Check now |
 | `q` or `Ctrl+C` | Quit |
@@ -72,9 +74,16 @@ part that matches several teammates puts an alert on each of them.
 ## Custom alerts
 
 By default an alert is a desktop notification on macOS, and a terminal bell on
-other systems. To run your own command instead, pass `--alert-command` or set
-`SOWORK_PRESENCE_WATCH_ALERT_COMMAND`. The command runs in `sh -c` and gets these
-environment variables:
+other systems. To run your own command instead, press `a` in the tool, type the
+command and press `enter`. Press `t` to try it. The command is saved in
+`~/.config/sowork-presence-watch/config.json` (or under
+`$SOWORK_PRESENCE_WATCH_CONFIG_DIR` / `$XDG_CONFIG_HOME`). Save it empty to go
+back to the default alert.
+
+You can also pass `--alert-command` or set `SOWORK_PRESENCE_WATCH_ALERT_COMMAND`.
+These win over the saved command for that run.
+
+The command runs in `sh -c` and gets these environment variables:
 
 | Variable | Example |
 | --- | --- |

@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 import { readFileSync } from 'node:fs';
 import { SoWork } from 'sowork';
-import { HELP, readSoworkCliConfig, resolveConfig } from './config.ts';
+import { HELP, readSoworkCliConfig, readToolConfig, resolveConfig, writeToolConfig } from './config.ts';
 import type { Availability, Member } from './presence.ts';
 import { App, describeError } from './tui.ts';
 
@@ -18,7 +18,12 @@ function version(): string {
 }
 
 async function main(): Promise<void> {
-  const result = resolveConfig(process.argv.slice(2), process.env, () => readSoworkCliConfig(process.env));
+  const result = resolveConfig(
+    process.argv.slice(2),
+    process.env,
+    () => readSoworkCliConfig(process.env),
+    () => readToolConfig(process.env),
+  );
   switch (result.kind) {
     case 'help':
       process.stdout.write(HELP);
@@ -65,6 +70,8 @@ async function main(): Promise<void> {
     selfId,
     intervalSeconds: config.intervalSeconds,
     alertCommand: config.alertCommand,
+    alertCommandSource: config.alertCommandSource,
+    saveAlertCommand: (alertCommand) => writeToolConfig(process.env, { ...readToolConfig(process.env), alertCommand }),
     watch: config.watch,
   }).start();
 }
